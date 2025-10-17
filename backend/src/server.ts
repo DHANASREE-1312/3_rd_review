@@ -1,0 +1,175 @@
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const http = require('http');
+const { Server } = require('socket.io');
+const { connectDB, getPool, isConnected } = require('./database');
+const { createTables, seedInitialData } = require('./models');
+const authRoutes = require('./routes/auth').default;
+const feedbackRoutes = require('./routes/feedback').default;
+const mealsRoutes = require('./routes/meals').default;
+const adminRoutes = require('./routes/admin').default;
+const monitoringRoutes = require('./routes/monitoring').default;
+const alertService = require('./services/alertService').default;
+
+// Load environment variables FIRST (before Application Insights)
+dotenv.config();
+
+// Initialize Application Insights monitoring
+const monitoring = require('./monitoring/appInsights').default;
+const { requestMonitoringMiddleware, errorMonitoringMiddleware } = require('./middleware/monitoring');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: [
+      'http://localhost:5173', 
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      'https://purple-pond-06f223000.2.azurestaticapps.net'
+    ],
+    methods: ['GET', 'POST']
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+
+// Initialize alert service with Socket.IO
+alertService.setSocketIO(io);
+
+// Middleware
+app.use(express.json());
+
+// Add monitoring middleware (before other middleware)
+app.use(requestMonitoringMiddleware);
+
+// Add request logging
+app.use((req: any, res: any, next: any) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  next();
+});
+
+app.use(cors({
+  origin: [
+    'http://localhost:5173', 
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    'https://purple-pond-06f223000.2.azurestaticapps.net'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
+}));
+
+// Connect to database and initialize schema (async, non-blocking)
+connectDB().then(async () => {
+  console.log('✅ Database connected successfully!');
+  try {
+    await createTables();
+    await seedInitialData();
+    console.log('✅ Database schema initialized!');
+  } catch (error) {
+    console.error('❌ Error initializing database schema:', error);
+  }
+}).catch((err: any) => {
+  console.error('❌ Failed to connect to database:', err);
+  console.log('⚠️ Server will start without database connection.');
+  console.log('📝 Note: Some features may not work until database is connected.');
+});
+
+// API Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/meals', mealsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/monitoring', monitoringRoutes);
+
+// Basic route
+app.get('/', (req: any, res: any) => {
+  res.json({
+    message: 'Daily Mess Feedback System Backend is running!',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      feedback: '/api/feedback',
+      meals: '/api/meals',
+      admin: '/api/admin'
+    }
+  });
+});
+
+// CORS test endpoint
+app.get('/cors-test', (req: any, res: any) => {
+  res.json({
+    message: 'CORS is working!',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req: any, res: any) => {
+  const pool = getPool();
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    database: isConnected() ? 'Connected' : 'Disconnected',
+    poolStatus: pool ? 'Available' : 'Not Available'
+  });
+});
+
+// Test database connection
+app.get('/test-db', async (req: any, res: any) => {
+  try {
+    const pool = getPool();
+    if (pool) {
+      const result = await pool.request().query('SELECT 1 as test');
+      res.json({ message: 'Database connected successfully', result: result.recordset });
+    } else {
+      res.status(500).json({ error: 'Database not connected' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection failed', details: err });
+  }
+});
+
+// Monitoring error handler (before global error handler)
+app.use(errorMonitoringMiddleware);
+
+// Global error handler
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
+
+// Socket.IO connection handling
+io.on('connection', (socket: any) => {
+  console.log('👤 Admin connected to real-time alerts:', socket.id);
+  
+  socket.on('disconnect', () => {
+    console.log('👤 Admin disconnected:', socket.id);
+  });
+  
+  // Join admin room for targeted alerts
+  socket.on('join-admin', () => {
+    socket.join('admin-room');
+    console.log('👨‍💼 Admin joined admin room:', socket.id);
+  });
+});
+
+// Start server
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Daily Mess Feedback System Backend running on port ${PORT}`);
+  console.log(`📱 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+  console.log(`🔌 Socket.IO enabled for real-time alerts`);
+  console.log(`🤖 AI-powered feedback analysis with Gemini API`);
+});
+
+module.exports = app;

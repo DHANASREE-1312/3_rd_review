@@ -1,0 +1,13 @@
+# ZAP Scanning Rules
+# This file configures which security rules to apply during OWASP ZAP scanning
+# Format: RULE_ID	THRESHOLD	[COMMENT]
+
+# Ignore false positives for development
+10021	IGNORE	X-Content-Type-Options Header Missing (Dev environment)
+10020	IGNORE	X-Frame-Options Header Not Set (Dev environment)
+
+# Alert on high-risk vulnerabilities
+40012	FAIL	Cross Site Scripting (Reflected)
+40014	FAIL	Cross Site Scripting (Persistent)
+40018	FAIL	SQL Injection
+90020	FAIL	Remote OS Command Injection

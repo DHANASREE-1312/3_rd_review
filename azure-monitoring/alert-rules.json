@@ -1,0 +1,168 @@
+{
+  "alertRules": [
+    {
+      "name": "High Error Rate Alert",
+      "description": "Triggers when error rate exceeds 10 errors per minute",
+      "severity": 2,
+      "enabled": true,
+      "condition": {
+        "allOf": [
+          {
+            "query": "exceptions | where timestamp > ago(5m) | summarize ErrorCount = count()",
+            "timeAggregation": "Count",
+            "operator": "GreaterThan",
+            "threshold": 50,
+            "metricMeasureColumn": "ErrorCount"
+          }
+        ]
+      },
+      "evaluationFrequency": "PT5M",
+      "windowSize": "PT5M",
+      "actions": {
+        "actionGroups": [
+          "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/microsoft.insights/actionGroups/AdminAlerts"
+        ]
+      }
+    },
+    {
+      "name": "Slow Response Time Alert",
+      "description": "Triggers when average response time exceeds 2 seconds",
+      "severity": 3,
+      "enabled": true,
+      "condition": {
+        "allOf": [
+          {
+            "query": "requests | where timestamp > ago(5m) | summarize AvgDuration = avg(duration)",
+            "timeAggregation": "Average",
+            "operator": "GreaterThan",
+            "threshold": 2000,
+            "metricMeasureColumn": "AvgDuration"
+          }
+        ]
+      },
+      "evaluationFrequency": "PT5M",
+      "windowSize": "PT10M",
+      "actions": {
+        "actionGroups": [
+          "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/microsoft.insights/actionGroups/PerformanceAlerts"
+        ]
+      }
+    },
+    {
+      "name": "High CPU Usage Alert",
+      "description": "Triggers when CPU usage exceeds 80%",
+      "severity": 2,
+      "enabled": true,
+      "condition": {
+        "allOf": [
+          {
+            "metricName": "Percentage CPU",
+            "metricNamespace": "Microsoft.Web/sites",
+            "operator": "GreaterThan",
+            "threshold": 80,
+            "timeAggregation": "Average"
+          }
+        ]
+      },
+      "evaluationFrequency": "PT5M",
+      "windowSize": "PT15M",
+      "actions": {
+        "actionGroups": [
+          "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/microsoft.insights/actionGroups/ResourceAlerts"
+        ]
+      }
+    },
+    {
+      "name": "Failed Requests Alert",
+      "description": "Triggers when failed requests exceed 5% of total requests",
+      "severity": 2,
+      "enabled": true,
+      "condition": {
+        "allOf": [
+          {
+            "query": "requests | where timestamp > ago(5m) | summarize FailureRate = todouble(countif(success == false)) / count() * 100",
+            "timeAggregation": "Average",
+            "operator": "GreaterThan",
+            "threshold": 5,
+            "metricMeasureColumn": "FailureRate"
+          }
+        ]
+      },
+      "evaluationFrequency": "PT5M",
+      "windowSize": "PT5M",
+      "actions": {
+        "actionGroups": [
+          "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/microsoft.insights/actionGroups/AdminAlerts"
+        ]
+      }
+    },
+    {
+      "name": "Database Connection Failures",
+      "description": "Triggers when database dependency calls fail",
+      "severity": 1,
+      "enabled": true,
+      "condition": {
+        "allOf": [
+          {
+            "query": "dependencies | where type == 'SQL' and success == false | where timestamp > ago(5m) | summarize FailureCount = count()",
+            "timeAggregation": "Count",
+            "operator": "GreaterThan",
+            "threshold": 5,
+            "metricMeasureColumn": "FailureCount"
+          }
+        ]
+      },
+      "evaluationFrequency": "PT5M",
+      "windowSize": "PT5M",
+      "actions": {
+        "actionGroups": [
+          "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/microsoft.insights/actionGroups/CriticalAlerts"
+        ]
+      }
+    }
+  ],
+  "actionGroups": [
+    {
+      "name": "AdminAlerts",
+      "shortName": "AdminAlert",
+      "enabled": true,
+      "emailReceivers": [
+        {
+          "name": "Admin Email",
+          "emailAddress": "admin@mess-feedback.com"
+        }
+      ],
+      "smsReceivers": [],
+      "webhookReceivers": []
+    },
+    {
+      "name": "PerformanceAlerts",
+      "shortName": "PerfAlert",
+      "enabled": true,
+      "emailReceivers": [
+        {
+          "name": "DevOps Team",
+          "emailAddress": "devops@mess-feedback.com"
+        }
+      ]
+    },
+    {
+      "name": "CriticalAlerts",
+      "shortName": "Critical",
+      "enabled": true,
+      "emailReceivers": [
+        {
+          "name": "On-Call Team",
+          "emailAddress": "oncall@mess-feedback.com"
+        }
+      ],
+      "smsReceivers": [
+        {
+          "name": "On-Call SMS",
+          "countryCode": "1",
+          "phoneNumber": "1234567890"
+        }
+      ]
+    }
+  ]
+}

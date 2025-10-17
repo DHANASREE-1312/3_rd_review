@@ -1,0 +1,203 @@
+name: Security Scanning (SAST & DAST)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scan every Monday at 9 AM
+    - cron: '0 9 * * 1'
+
+jobs:
+  # CodeQL Analysis for SAST
+  codeql-analysis:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript', 'typescript' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+
+  # SonarCloud Analysis
+  sonarcloud:
+    name: SonarCloud Code Quality & Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run Tests (if available)
+        continue-on-error: true
+        run: |
+          cd backend
+          npm test || echo "No tests configured"
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # OWASP ZAP Baseline Scan
+  zap-scan:
+    name: OWASP ZAP Security Scan
+    runs-on: ubuntu-latest
+    needs: [codeql-analysis]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Build Backend
+        run: |
+          cd backend
+          npm run build
+
+      - name: Create Test Environment File
+        run: |
+          cd backend
+          cat > .env << EOF
+          DB_SERVER=test-server.database.windows.net
+          DB_NAME=test-db
+          DB_USER=test-user
+          DB_PASSWORD=test-password
+          JWT_SECRET=test-secret-key-for-zap-scan
+          PORT=5000
+          GEMINI_API_KEY=test-key
+          EOF
+
+      - name: Start Backend Server
+        run: |
+          cd backend
+          npm start &
+          sleep 10
+          echo "Backend server started"
+
+      - name: Wait for Server to be Ready
+        run: |
+          timeout 30 bash -c 'until curl -f http://localhost:5000/health || curl -f http://localhost:5000; do sleep 2; done' || echo "Server may not be fully ready"
+
+      - name: OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:5000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a -j -l WARN'
+          allow_issue_writing: false
+          fail_action: false
+
+      - name: Upload ZAP Scan Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-scan-results
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+
+  # Security Summary Report
+  security-summary:
+    name: Generate Security Summary
+    runs-on: ubuntu-latest
+    needs: [codeql-analysis, sonarcloud, zap-scan]
+    if: always()
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Security Summary
+        run: |
+          cat > SECURITY_SCAN_SUMMARY.md << 'EOF'
+          # Security Scan Summary
+          
+          **Date:** $(date +"%Y-%m-%d %H:%M:%S")
+          **Branch:** ${{ github.ref_name }}
+          **Commit:** ${{ github.sha }}
+          
+          ## Scans Performed
+          
+          ### 1. CodeQL Analysis (SAST)
+          - **Status:** ${{ needs.codeql-analysis.result }}
+          - **Type:** Static Application Security Testing
+          - **Languages:** JavaScript, TypeScript
+          - **Queries:** Security Extended + Quality
+          
+          ### 2. SonarCloud Analysis
+          - **Status:** ${{ needs.sonarcloud.result }}
+          - **Type:** Code Quality & Security
+          - **Coverage:** Full codebase analysis
+          
+          ### 3. OWASP ZAP Scan (DAST)
+          - **Status:** ${{ needs.zap-scan.result }}
+          - **Type:** Dynamic Application Security Testing
+          - **Target:** Backend API
+          
+          ## Next Steps
+          1. Review CodeQL alerts in Security tab
+          2. Check SonarCloud dashboard for detailed metrics
+          3. Download ZAP scan artifacts for vulnerability details
+          4. Address high-priority security findings
+          
+          ## Resources
+          - [CodeQL Results](https://github.com/${{ github.repository }}/security/code-scanning)
+          - [SonarCloud Dashboard](https://sonarcloud.io/project/overview?id=YOUR_PROJECT_KEY)
+          - ZAP Results: Available in workflow artifacts
+          EOF
+
+      - name: Upload Security Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: SECURITY_SCAN_SUMMARY.md

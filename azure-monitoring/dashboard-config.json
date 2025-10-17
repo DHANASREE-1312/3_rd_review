@@ -1,0 +1,246 @@
+{
+  "properties": {
+    "lenses": {
+      "0": {
+        "order": 0,
+        "parts": {
+          "0": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.Insights/components/{app-insights-name}"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "1",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "PT1H",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| summarize RequestCount = count(), AvgDuration = avg(duration) by bin(timestamp, 5m)\n| render timechart\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Request Count & Response Time",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Last 1 hour",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "1": {
+            "position": {
+              "x": 6,
+              "y": 0,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "exceptions\n| where timestamp > ago(1h)\n| summarize ErrorCount = count() by type, bin(timestamp, 5m)\n| render timechart\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Error Rate",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "2": {
+            "position": {
+              "x": 0,
+              "y": 4,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "customEvents\n| where name == 'FeedbackSubmitted'\n| where timestamp > ago(24h)\n| summarize FeedbackCount = count() by bin(timestamp, 1h)\n| render columnchart\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Feedback Submissions (24h)",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "3": {
+            "position": {
+              "x": 6,
+              "y": 4,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "performanceCounters\n| where name == 'Processor Time'\n| where timestamp > ago(1h)\n| summarize AvgCPU = avg(value) by bin(timestamp, 5m)\n| render timechart\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "CPU Usage %",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "4": {
+            "position": {
+              "x": 0,
+              "y": 8,
+              "colSpan": 4,
+              "rowSpan": 3
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| summarize TotalRequests = count()\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Total Requests (1h)",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "5": {
+            "position": {
+              "x": 4,
+              "y": 8,
+              "colSpan": 4,
+              "rowSpan": 3
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "exceptions\n| where timestamp > ago(1h)\n| summarize ErrorCount = count()\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Total Errors (1h)",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          },
+          "6": {
+            "position": {
+              "x": 8,
+              "y": 8,
+              "colSpan": 4,
+              "rowSpan": 3
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| summarize AvgResponseTime = avg(duration)\n",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Avg Response Time (ms)",
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart"
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "model": {
+        "timeRange": {
+          "value": {
+            "relative": {
+              "duration": 24,
+              "timeUnit": 1
+            }
+          },
+          "type": "MsPortalFx.Composition.Configuration.ValueTypes.TimeRange"
+        }
+      }
+    }
+  },
+  "name": "Mess Feedback System - Monitoring Dashboard",
+  "type": "Microsoft.Portal/dashboards",
+  "location": "eastus",
+  "tags": {
+    "hidden-title": "Mess Feedback System Monitoring"
+  }
+}
