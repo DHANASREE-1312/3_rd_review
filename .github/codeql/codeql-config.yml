@@ -1,0 +1,27 @@
+name: "Custom CodeQL Configuration"
+disable-default-queries: false
+
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+  - name: Find unused code
+    uses: ./
+    with:
+      libraries: codeql-javascript
+    queries: |
+      import javascript
+      from Function f
+      where not exists(f.getACall())
+      select f, "This function is never called"
+
+paths:
+  - backend/src
+  - frontend/src
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/test"
+  - "**/tests"
+  - "**/__tests__"
+  - "**/dist"
+  - "**/build"
