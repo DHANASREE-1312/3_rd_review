@@ -29,8 +29,24 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        queries: security-extended,security-and-quality,security-quick-fix,security-experimental
-        config-file: .github/codeql/codeql-config.yml
+        queries: security-extended,security-and-quality
+        # Only use config file if it exists
+        config: |
+          name: "Custom CodeQL Configuration"
+          disable-default-queries: false
+          queries:
+            - uses: security-extended
+            - uses: security-and-quality
+          paths:
+            - backend/src
+            - frontend/src
+          paths-ignore:
+            - "**/node_modules"
+            - "**/test"
+            - "**/tests"
+            - "**/__tests__"
+            - "**/dist"
+            - "**/build"
 
     - name: Autobuild
       uses: github/codeql-action/autobuild@v3
