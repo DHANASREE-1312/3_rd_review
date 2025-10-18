@@ -114,7 +114,7 @@ jobs:
       - name: Create Test Environment File
         run: |
           cd backend
-          cat > .env << EOF
+          cat > .env << 'EOF'
           DB_SERVER=test-server.database.windows.net
           DB_NAME=test-db
           DB_USER=test-user
