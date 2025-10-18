@@ -100,21 +100,34 @@ jobs:
         run: |
           cd backend
           npm ci
+          npm install -g wait-on
 
       - name: Start Server
         run: |
           cd backend
+          echo "Starting server..."
           nohup npm start > server.log 2>&1 &
           echo $! > server_pid.txt
-          sleep 15
+          
+          # Wait for server to be ready
+          echo "Waiting for server to start..."
+          timeout 60s bash -c 'until curl -s http://localhost:5000 >/dev/null; do echo "Waiting for server..."; sleep 5; done' || (cat server.log && exit 1)
+          echo "Server is running!"
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:5000'
-          cmd_options: '-a -j -l WARN'
+          cmd_options: '-a -j -l WARN -t http://localhost:5000'
           allow_issue_writing: false
-          fail-action: false
+          fail_action: false  # Changed from fail-action to fail_action
+          rules_file_glob: "**/zap-rules/*.yaml"
+          container_name: zap
+          docker_name: owasp/zap2docker-stable
+          daemon: true
+          port: 8080
+          delay: 10
+          additional_options: "-I"
 
       - name: Stop Server
         if: always()
