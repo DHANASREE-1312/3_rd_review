@@ -72,6 +72,14 @@ jobs:
           cd backend
           npm test || echo "No tests configured"
 
+      - name: Create sonar-project.properties
+        run: |
+          echo "sonar.projectKey=mess-feedback-system" > sonar-project.properties
+          echo "sonar.organization=prasath-organization" >> sonar-project.properties
+          echo "sonar.sources=backend/src,frontend/src" >> sonar-project.properties
+          echo "sonar.javascript.lcov.reportPaths=coverage/lcov.info" >> sonar-project.properties
+          echo "sonar.typescript.lcov.reportPaths=coverage/lcov.info" >> sonar-project.properties
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
@@ -125,7 +133,9 @@ jobs:
 
       - name: Wait for Server to be Ready
         run: |
-          timeout 30 bash -c 'until curl -f http://localhost:5000/health || curl -f http://localhost:5000; do sleep 2; done' || echo "Server may not be fully ready"
+          echo "Waiting for server to start..."
+          timeout 60 bash -c 'until curl -f http://localhost:5000/health || curl -f http://localhost:5000; do sleep 5; echo "Waiting for server..."; done' || (echo "Server failed to start"; exit 1)
+          echo "Server is ready!"
 
       - name: OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0

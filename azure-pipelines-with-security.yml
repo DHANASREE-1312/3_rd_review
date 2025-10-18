@@ -1,0 +1,402 @@
+# Azure DevOps CI/CD Pipeline with Security Scanning - Review III
+# Includes: Build, Security Scanning (SAST/DAST), and Deploy
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    exclude:
+    - README.md
+    - docs/*
+
+variables:
+  buildConfiguration: 'Release'
+  nodeVersion: '20.x'
+  azureSubscription: 'Azure-ServiceConnection'
+  resourceGroupName: 'mess_fb'
+  backendAppName: 'app-mess-feedback-backend'
+  frontendAppName: 'app-mess-feedback-frontend'
+  sqlServerName: 'dailyfeedbacksystem'
+  sqlDatabaseName: 'messdata'
+
+stages:
+# ============================================
+# STAGE 1: BUILD
+# ============================================
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildAll
+    displayName: 'Build Frontend and Backend'
+    pool:
+       name: 'Default'
+    
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '$(nodeVersion)'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        echo "Building Frontend..."
+        cd frontend
+        call npm ci
+        if errorlevel 1 exit /b 1
+        call npm run build
+        if errorlevel 1 exit /b 1
+        echo "Frontend build completed!"
+      displayName: 'Build Frontend'
+    
+    - script: |
+        echo "Building Backend..."
+        cd backend
+        call npm ci
+        if errorlevel 1 exit /b 1
+        call npm run build
+        if errorlevel 1 exit /b 1
+        echo "Backend build completed!"
+      displayName: 'Build Backend'
+    
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: 'frontend/dist'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/frontend-$(Build.BuildId).zip'
+        replaceExistingArchive: true
+      displayName: 'Archive Frontend Build'
+    
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: 'backend'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/backend-$(Build.BuildId).zip'
+        replaceExistingArchive: true
+      displayName: 'Archive Backend Build'
+    
+    - publish: '$(Build.ArtifactStagingDirectory)/frontend-$(Build.BuildId).zip'
+      artifact: frontend
+      displayName: 'Publish Frontend Artifact'
+    
+    - publish: '$(Build.ArtifactStagingDirectory)/backend-$(Build.BuildId).zip'
+      artifact: backend
+      displayName: 'Publish Backend Artifact'
+
+# ============================================
+# STAGE 2: SECURITY SCANNING (REVIEW III)
+# ============================================
+- stage: SecurityScanning
+  displayName: '🔒 Security Scanning (Review III)'
+  dependsOn: Build
+  jobs:
+  
+  # Job 1: Static Application Security Testing (SAST)
+  - job: SAST_Analysis
+    displayName: 'SAST - Static Security Analysis'
+    pool:
+      vmImage: 'windows-latest'
+    
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '$(nodeVersion)'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd backend
+        call npm ci
+        cd ../frontend
+        call npm ci
+      displayName: 'Install Dependencies'
+    
+    # SonarCloud Analysis
+    - task: SonarCloudPrepare@1
+      displayName: 'Prepare SonarCloud Analysis'
+      inputs:
+        SonarCloud: 'SonarCloud-Connection'
+        organization: 'your-sonarcloud-org'
+        scannerMode: 'CLI'
+        configMode: 'file'
+        configFile: 'sonar-project.properties'
+    
+    - task: SonarCloudAnalyze@1
+      displayName: 'Run SonarCloud Code Analysis'
+    
+    - task: SonarCloudPublish@1
+      displayName: 'Publish SonarCloud Quality Gate Result'
+      inputs:
+        pollingTimeoutSec: '300'
+    
+    # npm audit for known vulnerabilities
+    - script: |
+        echo "Running npm audit on backend..."
+        cd backend
+        npm audit --json > $(Build.ArtifactStagingDirectory)/backend-npm-audit.json || echo "Vulnerabilities found"
+        
+        echo "Running npm audit on frontend..."
+        cd ../frontend
+        npm audit --json > $(Build.ArtifactStagingDirectory)/frontend-npm-audit.json || echo "Vulnerabilities found"
+      displayName: 'Run npm Audit (Dependency Check)'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'security-reports-sast'
+      displayName: 'Publish SAST Reports'
+  
+  # Job 2: Dynamic Application Security Testing (DAST)
+  - job: DAST_Analysis
+    displayName: 'DAST - Dynamic Security Testing'
+    dependsOn: SAST_Analysis
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '$(nodeVersion)'
+      displayName: 'Install Node.js'
+    
+    - script: |
+        cd backend
+        npm ci
+        npm run build
+      displayName: 'Build Backend for Testing'
+    
+    - script: |
+        cd backend
+        cat > .env << EOF
+        DB_SERVER=test-server.database.windows.net
+        DB_NAME=test-db
+        DB_USER=test-user
+        DB_PASSWORD=test-password
+        PORT=5000
+        GEMINI_API_KEY=test-key
+        FRONTEND_URL=http://localhost:5173
+        EOF
+      displayName: 'Create Test Environment File'
+    
+    - script: |
+        cd backend
+        npm start &
+        echo "Waiting for server to start..."
+        sleep 15
+        curl http://localhost:5000/health || echo "Server starting..."
+      displayName: 'Start Backend Server'
+    
+    # OWASP ZAP Baseline Scan
+    - script: |
+        docker run --network="host" \
+          -v $(Build.SourcesDirectory):/zap/wrk/:rw \
+          -t owasp/zap2docker-stable zap-baseline.py \
+          -t http://localhost:5000 \
+          -r zap-report.html \
+          -J zap-report.json \
+          -w zap-report.md \
+          -c .zap/rules.tsv || true
+      displayName: 'Run OWASP ZAP Baseline Scan'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/zap-report.html'
+        ArtifactName: 'zap-html-report'
+      displayName: 'Publish ZAP HTML Report'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/zap-report.json'
+        ArtifactName: 'zap-json-report'
+      displayName: 'Publish ZAP JSON Report'
+      condition: always()
+  
+  # Job 3: Security Summary
+  - job: SecuritySummary
+    displayName: 'Generate Security Summary Report'
+    dependsOn: 
+    - SAST_Analysis
+    - DAST_Analysis
+    condition: always()
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - script: |
+        cat > security-summary.md << 'EOF'
+        # 🔒 Security Scan Summary - Review III
+        
+        **Date:** $(date +"%Y-%m-%d %H:%M:%S")
+        **Build:** $(Build.BuildNumber)
+        **Branch:** $(Build.SourceBranchName)
+        **Commit:** $(Build.SourceVersion)
+        
+        ---
+        
+        ## 📊 Scans Performed
+        
+        ### 1. SonarCloud Analysis (SAST)
+        - **Type:** Static Application Security Testing
+        - **Coverage:** Full codebase (Frontend + Backend)
+        - **Checks:** 
+          - Security vulnerabilities
+          - Code quality issues
+          - Code smells
+          - Technical debt
+          - Test coverage
+        
+        ### 2. npm Audit (Dependency Check)
+        - **Type:** Known Vulnerability Detection
+        - **Coverage:** All npm dependencies
+        - **Checks:**
+          - Known CVEs in dependencies
+          - Outdated packages
+          - Security advisories
+        
+        ### 3. OWASP ZAP Scan (DAST)
+        - **Type:** Dynamic Application Security Testing
+        - **Target:** Running backend application
+        - **Checks:**
+          - Runtime vulnerabilities
+          - Missing security headers
+          - SSL/TLS configuration
+          - Authentication issues
+          - Session management
+        
+        ---
+        
+        ## 📁 Reports Available
+        
+        1. **SonarCloud Dashboard**
+           - View at: https://sonarcloud.io
+           - Detailed code quality metrics
+           - Security hotspots
+           - Remediation guidance
+        
+        2. **npm Audit Reports**
+           - Artifact: `security-reports-sast`
+           - Files: `backend-npm-audit.json`, `frontend-npm-audit.json`
+        
+        3. **OWASP ZAP Reports**
+           - Artifact: `zap-html-report` (HTML format)
+           - Artifact: `zap-json-report` (JSON format)
+           - Open HTML report in browser for detailed view
+        
+        ---
+        
+        ## ✅ Security Fixes Implemented
+        
+        ### Fix #1: Security Headers
+        - **Issue:** Missing security headers (X-Content-Type-Options, X-Frame-Options)
+        - **Solution:** Added Helmet middleware
+        - **File:** `backend/src/server.ts`
+        
+        ### Fix #2: SQL Injection Prevention
+        - **Issue:** Potential SQL injection vulnerabilities
+        - **Solution:** Implemented parameterized queries
+        - **File:** `backend/src/database.ts`
+        
+        ---
+        
+        ## 🎯 Next Steps
+        
+        1. Review SonarCloud dashboard for detailed findings
+        2. Download and review ZAP HTML report
+        3. Address high-priority vulnerabilities
+        4. Update dependencies with known vulnerabilities
+        5. Re-run scans after fixes
+        
+        ---
+        
+        **Pipeline:** Azure DevOps CI/CD with Security Scanning
+        **Project:** Daily Mess Feedback System - Review III
+        EOF
+      displayName: 'Create Security Summary'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: 'security-summary.md'
+        ArtifactName: 'security-summary'
+      displayName: 'Publish Security Summary'
+
+# ============================================
+# STAGE 3: DEPLOY
+# ============================================
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: 
+  - Build
+  - SecurityScanning
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  
+  jobs:
+  - deployment: DeployBackend
+    displayName: 'Deploy Backend to Azure App Service'
+    pool:
+      name: 'Default'
+    environment: 'production'
+    
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: backend
+            displayName: 'Download backend artifact'
+          
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: '$(azureSubscription)'
+              appType: 'webAppLinux'
+              appName: '$(backendAppName)'
+              runtimeStack: 'NODE|20-lts'
+              package: '$(Pipeline.Workspace)/backend/backend-$(Build.BuildId).zip'
+              appSettings: '-DB_SERVER $(sqlServerName).database.windows.net -DB_NAME $(sqlDatabaseName) -DB_USER $(DB_USER) -DB_PASSWORD $(DB_PASSWORD) -JWT_SECRET $(JWT_SECRET) -PORT 8080 -APPLICATIONINSIGHTS_CONNECTION_STRING $(APPLICATIONINSIGHTS_CONNECTION_STRING)'
+            displayName: 'Deploy backend to Azure App Service'
+
+  - deployment: DeployFrontend
+    displayName: 'Deploy Frontend'
+    pool:
+      name: 'Default'
+    environment: 'production'
+    
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: frontend
+            displayName: 'Download frontend artifact'
+          
+          - task: ExtractFiles@1
+            inputs:
+              archiveFilePatterns: '$(Pipeline.Workspace)/frontend/frontend-$(Build.BuildId).zip'
+              destinationFolder: '$(Pipeline.Workspace)/frontend-extracted'
+              cleanDestinationFolder: true
+            displayName: 'Extract Frontend Files'
+          
+          - task: PowerShell@2
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Installing SWA CLI..."
+                npm install -g @azure/static-web-apps-cli
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Failed to install SWA CLI"
+                    exit 1
+                }
+                
+                Write-Host "Deploying to Static Web App..."
+                Set-Location "$(Pipeline.Workspace)/frontend-extracted"
+                
+                swa deploy . --deployment-token $(AZURE_STATIC_WEB_APPS_API_TOKEN) --no-use-keychain
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Deployment failed"
+                    exit 1
+                }
+                
+                Write-Host "Frontend deployed successfully!"
+              errorActionPreference: 'stop'
+            displayName: 'Deploy Frontend to Static Web App'
